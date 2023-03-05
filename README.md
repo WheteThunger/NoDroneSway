@@ -14,4 +14,4 @@ This is an import plugin if you are using other drone plugins that add attachmen
 
 ## Consequences
 
-Non-swaying drones fly silently, and their propellers do not animate. This cannot be fixed.
+Non-swaying drones cannot have their camera tilted up and down. This cannot be fixed.

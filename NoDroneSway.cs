@@ -2,13 +2,14 @@
 
 namespace Oxide.Plugins
 {
-    [Info("No Drone Sway", "WhiteThunder", "1.0.0")]
+    [Info("No Drone Sway", "WhiteThunder", "1.0.1")]
     [Description("Drones no longer sway in the wind, if they have attachments.")]
     internal class NoDroneSway : CovalencePlugin
     {
         #region Fields
 
-        private const BaseEntity.Flags DroneFlyingFlag = BaseEntity.Flags.Reserved2;
+        private const int DroneThrottleUpFlag = (int)BaseEntity.Flags.Reserved1;
+        private const int DroneFlyingFlag = (int)BaseEntity.Flags.Reserved2;
         private readonly object False = false;
 
         #endregion
@@ -20,7 +21,7 @@ namespace Oxide.Plugins
             if (ShouldSway(drone))
                 return;
 
-            saveInfo.msg.baseEntity.flags = RemoveDroneFlyingFlag(saveInfo.msg.baseEntity.flags);
+            saveInfo.msg.baseEntity.flags = ModifyDroneFlags(drone);
         }
 
         private object OnEntityFlagsNetworkUpdate(Drone drone)
@@ -34,7 +35,7 @@ namespace Oxide.Plugins
                 var write = Net.sv.StartWrite();
                 write.PacketID(Message.Type.EntityFlags);
                 write.EntityID(drone.net.ID);
-                write.Int32(RemoveDroneFlyingFlag((int)drone.flags));
+                write.Int32(ModifyDroneFlags(drone));
                 write.Send(new SendInfo(subscribers));
             }
 
@@ -46,9 +47,16 @@ namespace Oxide.Plugins
 
         #region Helpers
 
-        private static int RemoveDroneFlyingFlag(int flags)
+        private static int ModifyDroneFlags(Drone drone)
         {
-            return flags & ~(int)DroneFlyingFlag;
+            var flags = (int)drone.flags;
+
+            if ((flags & DroneFlyingFlag) != 0)
+            {
+                flags = flags & ~DroneFlyingFlag | DroneThrottleUpFlag;
+            }
+
+            return flags;
         }
 
         private static bool ShouldSway(Drone drone)
@@ -58,9 +66,20 @@ namespace Oxide.Plugins
             {
                 for (var i = 0; i < drone.children.Count; i++)
                 {
-                    // Resized child entities are permitted (intended for Drone Lights).
-                    if (!(drone.children[i] is SphereEntity))
+                    var sphereChild = drone.children[i] as SphereEntity;
+                    if ((object)sphereChild == null)
                         return false;
+
+                    for (var j = 0; j < sphereChild.children.Count; j++)
+                    {
+                        var grandChild = sphereChild.children[j];
+
+                        // Resized search lights are permitted (Drone Lights).
+                        if (grandChild is SearchLight)
+                            continue;
+
+                        return false;
+                    }
                 }
             }
 
