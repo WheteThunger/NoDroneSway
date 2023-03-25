@@ -11,7 +11,3 @@ This is an import plugin if you are using other drone plugins that add attachmen
 - Drone Turrets
 - Mega Drones
 - Ridable Drones
-
-## Consequences
-
-Non-swaying drones cannot have their camera tilted up and down. This cannot be fixed.

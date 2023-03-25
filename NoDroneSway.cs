@@ -2,7 +2,7 @@
 
 namespace Oxide.Plugins
 {
-    [Info("No Drone Sway", "WhiteThunder", "1.0.1")]
+    [Info("No Drone Sway", "WhiteThunder", "1.0.2")]
     [Description("Drones no longer sway in the wind, if they have attachments.")]
     internal class NoDroneSway : CovalencePlugin
     {
@@ -21,7 +21,13 @@ namespace Oxide.Plugins
             if (ShouldSway(drone))
                 return;
 
-            saveInfo.msg.baseEntity.flags = ModifyDroneFlags(drone);
+            // Don't change flags for the controller because that would prevent viewing the pitch.
+            // This approach is possible because network caching is disabled for RemoteControlEntity.
+            var controllerSteamId = drone.ControllingViewerId?.SteamId ?? 0;
+            if (controllerSteamId == 0 || controllerSteamId != (saveInfo.forConnection?.ownerid ?? 0))
+            {
+                saveInfo.msg.baseEntity.flags = ModifyDroneFlags(drone);
+            }
         }
 
         private object OnEntityFlagsNetworkUpdate(Drone drone)
@@ -32,11 +38,42 @@ namespace Oxide.Plugins
             var subscribers = drone.GetSubscribers();
             if (subscribers != null && subscribers.Count > 0)
             {
-                var write = Net.sv.StartWrite();
-                write.PacketID(Message.Type.EntityFlags);
-                write.EntityID(drone.net.ID);
-                write.Int32(ModifyDroneFlags(drone));
-                write.Send(new SendInfo(subscribers));
+                var controllerSteamId = drone.ControllingViewerId?.SteamId ?? 0;
+                if (controllerSteamId == 0)
+                {
+                    SendFlagsUpdate(drone, ModifyDroneFlags(drone), new SendInfo(subscribers));
+                }
+                else
+                {
+                    var otherConnections = Facepunch.Pool.GetList<Connection>();
+
+                    Connection controllerConnection = null;
+                    foreach (var connection in subscribers)
+                    {
+                        if (connection.ownerid == controllerSteamId)
+                        {
+                            controllerConnection = connection;
+                        }
+                        else
+                        {
+                            otherConnections.Add(connection);
+                        }
+                    }
+
+                    var flags = ModifyDroneFlags(drone);
+
+                    if (otherConnections.Count > 0)
+                    {
+                        SendFlagsUpdate(drone, flags, new SendInfo(otherConnections));
+                    }
+
+                    if (controllerConnection != null)
+                    {
+                        SendFlagsUpdate(drone, flags, new SendInfo(controllerConnection));
+                    }
+
+                    Facepunch.Pool.FreeList(ref otherConnections);
+                }
             }
 
             drone.gameObject.SendOnSendNetworkUpdate(drone);
@@ -47,7 +84,16 @@ namespace Oxide.Plugins
 
         #region Helpers
 
-        private static int ModifyDroneFlags(Drone drone)
+        private static void SendFlagsUpdate(BaseEntity entity, int flags, SendInfo sendInfo)
+        {
+            var write = Net.sv.StartWrite();
+            write.PacketID(Message.Type.EntityFlags);
+            write.EntityID(entity.net.ID);
+            write.Int32(flags);
+            write.Send(sendInfo);
+        }
+
+        private static int ModifyDroneFlags(BaseEntity drone)
         {
             var flags = (int)drone.flags;
 
