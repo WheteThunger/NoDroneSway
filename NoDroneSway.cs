@@ -130,7 +130,7 @@ namespace Oxide.Plugins
             }
 
             // Drones with a re-parented rigid body are probably resized and should not sway.
-            if (drone.body.gameObject != drone.gameObject)
+            if (drone != null && drone.body.gameObject != drone.gameObject)
                 return false;
 
             return true;
