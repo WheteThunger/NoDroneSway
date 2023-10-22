@@ -2,7 +2,7 @@
 
 namespace Oxide.Plugins
 {
-    [Info("No Drone Sway", "WhiteThunder", "1.0.2")]
+    [Info("No Drone Sway", "WhiteThunder", "1.0.3")]
     [Description("Drones no longer sway in the wind, if they have attachments.")]
     internal class NoDroneSway : CovalencePlugin
     {
@@ -18,21 +18,27 @@ namespace Oxide.Plugins
 
         private void OnEntitySaved(Drone drone, BaseNetworkable.SaveInfo saveInfo)
         {
-            if (ShouldSway(drone))
+            if ((saveInfo.msg.baseEntity.flags & DroneFlyingFlag) == 0
+                || !drone.ControllingViewerId.HasValue
+                || ShouldSway(drone))
                 return;
 
-            // Don't change flags for the controller because that would prevent viewing the pitch.
+            // Don't change flags for the remote controller because that would prevent viewing the pitch.
             // This approach is possible because network caching is disabled for RemoteControlEntity.
-            var controllerSteamId = drone.ControllingViewerId?.SteamId ?? 0;
-            if (controllerSteamId == 0 || controllerSteamId != (saveInfo.forConnection?.ownerid ?? 0))
-            {
-                saveInfo.msg.baseEntity.flags = ModifyDroneFlags(drone);
-            }
+            var controllerSteamId = drone.ControllingViewerId.Value.SteamId;
+            if (controllerSteamId != 0
+                && controllerSteamId == (saveInfo.forConnection?.ownerid ?? 0)
+                && IsControllingDrone(saveInfo.forConnection, drone))
+                return;
+
+            saveInfo.msg.baseEntity.flags = ModifyDroneFlags(drone);
         }
 
         private object OnEntityFlagsNetworkUpdate(Drone drone)
         {
-            if (ShouldSway(drone))
+            if (((int)drone.flags & DroneFlyingFlag) == 0
+                || !drone.ControllingViewerId.HasValue
+                || ShouldSway(drone))
                 return null;
 
             var subscribers = drone.GetSubscribers();
@@ -41,10 +47,12 @@ namespace Oxide.Plugins
                 var controllerSteamId = drone.ControllingViewerId?.SteamId ?? 0;
                 if (controllerSteamId == 0)
                 {
+                    // No player is controlling the drone, so send the same update to all subscribers.
                     SendFlagsUpdate(drone, ModifyDroneFlags(drone), new SendInfo(subscribers));
                 }
                 else
                 {
+                    // A player is controlling the drone, so we might need to send that player different flags.
                     var otherConnections = Facepunch.Pool.GetList<Connection>();
 
                     Connection controllerConnection = null;
@@ -60,6 +68,14 @@ namespace Oxide.Plugins
                         }
                     }
 
+                    if (controllerConnection != null && !IsControllingDrone(controllerConnection, drone))
+                    {
+                        // The controller isn't using a computer station (e.g., RidableDrones plugin),
+                        // so send them the same snapshot as other players.
+                        otherConnections.Add(controllerConnection);
+                        controllerConnection = null;
+                    }
+
                     var flags = ModifyDroneFlags(drone);
 
                     if (otherConnections.Count > 0)
@@ -69,7 +85,7 @@ namespace Oxide.Plugins
 
                     if (controllerConnection != null)
                     {
-                        SendFlagsUpdate(drone, flags, new SendInfo(controllerConnection));
+                        SendFlagsUpdate(drone, (int)drone.flags, new SendInfo(controllerConnection));
                     }
 
                     Facepunch.Pool.FreeList(ref otherConnections);
@@ -83,6 +99,27 @@ namespace Oxide.Plugins
         #endregion
 
         #region Helpers
+
+        private static class RCUtils
+        {
+            public static T GetControlledEntity<T>(BasePlayer player) where T : class
+            {
+                var station = player.GetMounted() as ComputerStation;
+                if ((object)station == null)
+                    return null;
+
+                return station.currentlyControllingEnt.Get(serverside: true) as T;
+            }
+        }
+
+        private static bool IsControllingDrone(Connection connection, Drone drone)
+        {
+            var player = connection.player as BasePlayer;
+            if ((object)player == null)
+                return false;
+
+            return RCUtils.GetControlledEntity<Drone>(player) == drone;
+        }
 
         private static void SendFlagsUpdate(BaseEntity entity, int flags, SendInfo sendInfo)
         {
