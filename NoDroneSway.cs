@@ -2,14 +2,14 @@
 
 namespace Oxide.Plugins
 {
-    [Info("No Drone Sway", "WhiteThunder", "1.0.3")]
+    [Info("No Drone Sway", "WhiteThunder", "1.0.4")]
     [Description("Drones no longer sway in the wind, if they have attachments.")]
     internal class NoDroneSway : CovalencePlugin
     {
         #region Fields
 
-        private const int DroneThrottleUpFlag = (int)BaseEntity.Flags.Reserved1;
-        private const int DroneFlyingFlag = (int)BaseEntity.Flags.Reserved2;
+        private const int DroneThrottleUpFlag = (int)Drone.Flag_ThrottleUp;
+        private const int DroneFlyingFlag = (int)Drone.Flag_Flying;
         private readonly object False = false;
 
         #endregion
@@ -27,7 +27,7 @@ namespace Oxide.Plugins
             // This approach is possible because network caching is disabled for RemoteControlEntity.
             var controllerSteamId = drone.ControllingViewerId.Value.SteamId;
             if (controllerSteamId != 0
-                && controllerSteamId == (saveInfo.forConnection?.ownerid ?? 0)
+                && controllerSteamId == (saveInfo.forConnection?.player as BasePlayer)?.userID
                 && IsControllingDrone(saveInfo.forConnection, drone))
                 return;
 
@@ -42,7 +42,7 @@ namespace Oxide.Plugins
                 return null;
 
             var subscribers = drone.GetSubscribers();
-            if (subscribers != null && subscribers.Count > 0)
+            if (subscribers is { Count: > 0 })
             {
                 var controllerSteamId = drone.ControllingViewerId?.SteamId ?? 0;
                 if (controllerSteamId == 0)
