@@ -2,7 +2,7 @@
 
 namespace Oxide.Plugins
 {
-    [Info("No Drone Sway", "WhiteThunder", "1.0.4")]
+    [Info("No Drone Sway", "WhiteThunder", "1.0.5")]
     [Description("Drones no longer sway in the wind, if they have attachments.")]
     internal class NoDroneSway : CovalencePlugin
     {
@@ -123,8 +123,7 @@ namespace Oxide.Plugins
 
         private static void SendFlagsUpdate(BaseEntity entity, int flags, SendInfo sendInfo)
         {
-            var write = Net.sv.StartWrite();
-            write.PacketID(Message.Type.EntityFlags);
+            var write = Net.sv.StartWrite(Message.Type.EntityFlags);
             write.EntityID(entity.net.ID);
             write.Int32(flags);
             write.Send(sendInfo);
